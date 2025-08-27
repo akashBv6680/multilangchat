@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 
-# Streamlit Title
+# App Title
 st.title("Multilingual Conversational Chatbot")
 
 # Language options
@@ -12,45 +12,49 @@ language = st.selectbox("Select your language:", languages, index=0)
 API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
 headers = {"Authorization": f"Bearer {st.secrets['HUGGINGFACE_TOKEN']}"}
 
-# Maintain conversation history
+# Conversation history
 if "history" not in st.session_state:
     st.session_state.history = []
 
-# Display chat history (User & Bot)
+# Display chat history
 for role, content in st.session_state.history:
     if role == "user":
         st.markdown(f"**You ({language}):** {content}")
     else:
         st.markdown(f"**Bot ({language}):** {content}")
 
-# User input field
+# User input
 user_input = st.text_input(f"Type your message in {language}:")
 
-# Send button
+# Send Button Logic
 if st.button("Send") and user_input:
-    # Add user message to history
+    # Add user input to chat history
     st.session_state.history.append(("user", user_input))
 
-    # Prepare prompt: Ask model to always reply in the selected language
+    # Prepare conversation prompt
     conversation = "\n".join(
         [f"User: {msg}" if role == "user" else f"Assistant: {msg}" for role, msg in st.session_state.history]
     )
-    prompt = f"Respond only in {language}. Be helpful and conversational.\n{conversation}\nAssistant:"
+    prompt = f"Respond in {language}. Be conversational, helpful, and context-aware.\n{conversation}\nAssistant:"
 
-    # Call Hugging Face Inference API
+    # API call to Hugging Face
     payload = {"inputs": prompt, "parameters": {"max_new_tokens": 200}}
     response = requests.post(API_URL, headers=headers, json=payload)
 
     if response.status_code == 200:
         try:
-            # Extract text correctly
-            output_text = response.json()[0]["generated_text"]
-            output_text = output_text.split("Assistant:")[-1].strip()
+            json_response = response.json()
+            if isinstance(json_response, list) and "generated_text" in json_response[0]:
+                output_text = json_response[0]["generated_text"].split("Assistant:")[-1].strip()
+            else:
+                output_text = "Unexpected response format."
         except Exception:
-            output_text = "Sorry, I couldn't understand the response."
+            output_text = "Error parsing AI response."
     else:
         output_text = "Error: Could not get a response from the AI model."
 
-    # Add bot response to history and refresh
+    # Append bot response to chat history
     st.session_state.history.append(("bot", output_text))
-    st.experimental_rerun()
+
+    # Force re-render (new messages show instantly without rerun)
+    st.session_state.user_input = ""
