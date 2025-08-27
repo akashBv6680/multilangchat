@@ -1,53 +1,48 @@
 import streamlit as st
-from transformers import MBartForConditionalGeneration, MBart50Tokenizer
+import requests
 
-st.title("Multilingual Chatbot")
+# Streamlit App Title
+st.title("Multilingual Conversational Chatbot")
 
-# Language mappings for mBART-50
-lang_map = {
-    "English": "en_XX",
-    "Tamil": "ta_IN",
-    "French": "fr_XX",
-    "Japanese": "ja_XX"
-}
+# Language options
+languages = ["English", "Tamil", "French", "Japanese"]
+language = st.selectbox("Select your language:", languages, index=0)
 
-# Dropdown for input & output languages
-input_lang = st.selectbox("Select Input Language:", list(lang_map.keys()), index=0)
-output_lang = st.selectbox("Select Output Language:", list(lang_map.keys()), index=0)
+# Hugging Face API details
+API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
+headers = {"Authorization": f"Bearer {st.secrets['HUGGINGFACE_TOKEN']}"}
 
-# User input text
-user_input = st.text_input(f"You ({input_lang}):")
+# Maintain conversation history
+if "history" not in st.session_state:
+    st.session_state.history = []
 
-# Load model & tokenizer once
-if 'pipeline_obj' not in st.session_state:
-    model_name = "facebook/mbart-large-50-many-to-many-mmt"
-    tokenizer = MBart50Tokenizer.from_pretrained(
-        model_name,
-        use_auth_token=st.secrets["HUGGINGFACE_TOKEN"]
-    )
-    model = MBartForConditionalGeneration.from_pretrained(
-        model_name,
-        use_auth_token=st.secrets["HUGGINGFACE_TOKEN"]
-    )
-    st.session_state.pipeline_obj = (model, tokenizer)
+# Display chat history
+for msg in st.session_state.history:
+    role, content = msg
+    if role == "user":
+        st.markdown(f"**You ({language}):** {content}")
+    else:
+        st.markdown(f"**Bot ({language}):** {content}")
 
-# Generate response when user clicks Send
+# User input box
+user_input = st.text_input(f"Type your message in {language}:")
+
+# Send message
 if st.button("Send") and user_input:
-    model, tokenizer = st.session_state.pipeline_obj
+    # Add user input to history
+    st.session_state.history.append(("user", user_input))
 
-    # Set source language
-    tokenizer.src_lang = lang_map[input_lang]
+    # Build conversation prompt
+    conversation = "\n".join([f"{'User' if role=='user' else 'Assistant'}: {content}" for role, content in st.session_state.history])
+    prompt = f"Reply in {language}. Continue the conversation:\n{conversation}\nAssistant:"
 
-    # Tokenize input
-    encoded = tokenizer(user_input, return_tensors="pt")
+    # Call Hugging Face API
+    payload = {"inputs": prompt, "parameters": {"max_new_tokens": 200}}
+    response = requests.post(API_URL, headers=headers, json=payload)
 
-    # Generate text in target language
-    generated_tokens = model.generate(
-        **encoded,
-        forced_bos_token_id=tokenizer.lang_code_to_id[lang_map[output_lang]],
-        max_length=200
-    )
+    if response.status_code == 200:
+        output_text = response.json()[0]["generated_text"].split("Assistant:")[-1].strip()
+    else:
+        output_text = "Error: Could not get a response from the AI model."
 
-    # Decode result
-    result = tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)[0]
-    st.text_area(f"Bot ({output_lang}):", value=result, height=150)
+    # Add bot reply to h
